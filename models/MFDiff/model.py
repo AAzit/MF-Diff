@@ -223,54 +223,6 @@ class MFDiff_base(nn.Module):
 
             imputed_samples[:, i] = current_sample.detach()
         return imputed_samples
-    
-    def impute_DDIM(self, X_Tilde, cond_mask, side_info, n_samples, X_itp, X_DWT):
-        B, K, L = X_Tilde.shape
-
-        imputed_samples = torch.zeros(B, n_samples, K, L).to(self.device)
-
-        total_steps = self.num_steps
-        ddim_steps = torch.linspace(0, total_steps - 1, self.K_fast).long().to(self.device)
-        ddim_steps = ddim_steps.flip(0)  # T -> 0
-
-        for i in range(n_samples):
-
-            current_sample = torch.randn_like(X_Tilde)
-
-            for idx in range(len(ddim_steps) - 1):
-                t = ddim_steps[idx]
-                t_prev = ddim_steps[idx + 1]
-
-                cond_obs = (cond_mask * X_Tilde).unsqueeze(1)
-                noisy_target = ((1 - cond_mask) * current_sample).unsqueeze(1)
-                diff_input = cond_obs + noisy_target
-
-                predicted = self.diffmodel.impute(
-                    diff_input,
-                    side_info,
-                    torch.tensor([t]).to(self.device),
-                    X_itp,
-                    X_DWT
-                )
-
-                sigma_ddim = ((1 - alpha_hat_prev) / (1 - alpha_hat_t)).sqrt()
-                sigma = self.eta * sigma_ddim
-
-                alpha_hat_t = self.alpha_hat[t].view(1, 1, 1)
-                x0_pred = (current_sample - (1 - alpha_hat_t).sqrt() * predicted) / alpha_hat_t.sqrt()
-                alpha_hat_prev = self.alpha_hat[t_prev].view(1, 1, 1)
-                pred_dir = (1 - alpha_hat_prev - sigma ** 2).sqrt() * predicted
-                x_prev_mean = alpha_hat_prev.sqrt() * x0_pred + pred_dir
-
-                if t_prev > 0:
-                    noise = torch.randn_like(current_sample)
-                    current_sample = x_prev_mean + sigma * noise
-                else:
-                    current_sample = x_prev_mean
-
-            imputed_samples[:, i] = current_sample.detach()
-
-        return imputed_samples
 
     def forward(self, batch, is_train=1):
         if is_train:
